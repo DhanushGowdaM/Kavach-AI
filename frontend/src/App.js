@@ -1,53 +1,90 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import React from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { Toaster } from "react-hot-toast";
+import Layout from "@/components/Layout";
+import Login from "@/pages/Login";
+import Dashboard from "@/pages/Dashboard";
+import DataSources from "@/pages/DataSources";
+import Assets from "@/pages/Assets";
+import AssetDetail from "@/pages/AssetDetail";
+import ConsentManager from "@/pages/ConsentManager";
+import RightsHub from "@/pages/RightsHub";
+import RiskFlags from "@/pages/RiskFlags";
+import BreachSentinel from "@/pages/BreachSentinel";
+import VendorTrust from "@/pages/VendorTrust";
+import ComplianceScore from "@/pages/ComplianceScore";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0D1117] flex items-center justify-center">
+        <p className="text-[#8B949E] font-mono text-sm animate-pulse">LOADING...</p>
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+function AppRoutes() {
+  const { user, loading } = useAuth();
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0D1117] flex items-center justify-center">
+        <p className="text-[#8B949E] font-mono text-sm animate-pulse">INITIALIZING KAVACH...</p>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
+    <Routes>
+      <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
+      <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="sources" element={<DataSources />} />
+        <Route path="assets" element={<Assets />} />
+        <Route path="assets/:id" element={<AssetDetail />} />
+        <Route path="consent" element={<ConsentManager />} />
+        <Route path="rights" element={<RightsHub />} />
+        <Route path="risk-flags" element={<RiskFlags />} />
+        <Route path="breach" element={<BreachSentinel />} />
+        <Route path="vendors" element={<VendorTrust />} />
+        <Route path="compliance" element={<ComplianceScore />} />
+        <Route path="reports" element={<PlaceholderPage title="Audit Reports" />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
+}
+
+function PlaceholderPage({ title }) {
+  return (
+    <div className="space-y-6 animate-fade-in" data-testid={`${title.toLowerCase().replace(/\s+/g, '-')}-page`}>
+      <h1 className="text-[22px] font-semibold text-[#E6EDF3] font-['Outfit']">{title}</h1>
+      <div className="bg-[#161B22] border border-[#30363D] rounded-lg p-8 text-center">
+        <p className="text-sm text-[#8B949E]">This module is coming soon.</p>
+      </div>
     </div>
   );
-};
+}
 
 function App() {
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <BrowserRouter>
+      <AuthProvider>
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            style: { background: '#161B22', color: '#E6EDF3', border: '1px solid #30363D' },
+          }}
+        />
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 
