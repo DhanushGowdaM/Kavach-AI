@@ -1,0 +1,126 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+
+# ─── STAGE 1: BUILD ───────────────────────────────────────
+# This stage builds and tests your code
+- stage: Build
+  displayName: Build and Test
+  jobs:
+  - job: BuildJob
+    displayName: Build Kavach
+    steps:
+
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.11'
+      displayName: Set Python version
+
+    - script: |
+        cd backend
+        pip install -r requirements.txt
+        echo "Backend dependencies installed"
+      displayName: Install backend dependencies
+
+    - script: |
+        cd frontend
+        npm install
+        npm run build
+        echo "Frontend built successfully"
+      displayName: Build frontend
+
+    - script: |
+        echo "Build completed successfully"
+        echo "Commit: $(Build.SourceVersion)"
+        echo "Branch: $(Build.SourceBranch)"
+      displayName: Print build info
+
+# ─── STAGE 2: DEPLOY ──────────────────────────────────────
+# This stage copies code to server and restarts the app
+- stage: Deploy
+  displayName: Deploy to Azure VM
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: DeployJob
+    displayName: Deploy Kavach to Server
+    steps:
+
+    - task: SSH@0
+      displayName: Copy code to server
+      inputs:
+        sshEndpoint: kavach-server-ssh
+        runOptions: commands
+        commands: |
+          mkdir -p /home/kavachadmin/kavach
+
+    - task: CopyFilesOverSSH@0
+      displayName: Upload application files
+      inputs:
+        sshEndpoint: kavach-server-ssh
+        sourceFolder: $(Build.SourcesDirectory)
+        contents: |
+          **
+          !.git/**
+          !node_modules/**
+          !**/__pycache__/**
+        targetFolder: /home/kavachadmin/kavach
+        cleanTargetFolder: false
+
+    - task: SSH@0
+      displayName: Start application with Docker Compose
+      inputs:
+        sshEndpoint: kavach-server-ssh
+        runOptions: commands
+        commands: |
+          cd /home/kavachadmin/kavach
+
+          echo "Stopping existing containers..."
+          docker-compose down || true
+
+          echo "Pulling latest images..."
+          docker-compose pull || true
+
+          echo "Starting Kavach..."
+          docker-compose up -d --build
+
+          echo "Waiting for app to start..."
+          sleep 15
+
+          echo "Checking container status..."
+          docker-compose ps
+
+          echo "Kavach is live!"
+```
+
+Commit and push this file to your GitHub `main` branch.
+
+---
+
+### Step 11 — Create the pipeline in Azure DevOps
+
+1. In Azure DevOps, click **"Pipelines"** in the left menu
+2. Click **"New Pipeline"**
+3. Choose **"GitHub"**
+4. Select your Kavach repository
+5. It will find the `azure-pipelines.yml` file automatically
+6. Click **"Run"**
+
+You will see the pipeline start running. It looks like this:
+```
+Stage 1: Build ──────────────────────
+  ✅ Set Python version
+  ✅ Install backend dependencies
+  ✅ Build frontend
+  ✅ Print build info
+
+Stage 2: Deploy ─────────────────────
+  ✅ Copy code to server
+  ✅ Upload application files
+  ✅ Start application with Docker Compose
