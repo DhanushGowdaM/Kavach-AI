@@ -95,7 +95,7 @@ export default function Layout() {
         </nav>
 
         {/* User */}
-        <div className="border-t border-[#30363D] p-4">
+        <div className="border-t border-[#30363D] p-4 space-y-3">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-[#1C2333] flex items-center justify-center text-xs text-[#58A6FF] font-semibold">
               {user?.full_name?.charAt(0) || "U"}
@@ -104,10 +104,10 @@ export default function Layout() {
               <p className="text-sm text-[#E6EDF3] truncate">{user?.full_name || "User"}</p>
               <p className="text-xs text-[#8B949E]">{user?.role || "VIEWER"}</p>
             </div>
-            <button onClick={handleLogout} className="text-[#8B949E] hover:text-[#FF6B6B] transition-colors" data-testid="logout-btn">
-              <LogOut size={16} />
-            </button>
           </div>
+          <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-sm text-[#8B949E] hover:text-[#FF6B6B] hover:bg-[#FF6B6B]/5 py-2 rounded-md transition-all" data-testid="logout-btn">
+            <LogOut size={14} /> Sign Out
+          </button>
         </div>
       </aside>
 
