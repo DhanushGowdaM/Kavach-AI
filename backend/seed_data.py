@@ -253,6 +253,35 @@ def get_scan_jobs():
     ]
 
 
+def get_child_records():
+    return [
+        {"id": uid(), "org_id": ORG_ID, "principal_name": "Aarav Sharma", "principal_id": "CUST-MIN-001", "date_of_birth": "2012-03-15", "age": 13, "guardian_name": "Rajesh Kumar Sharma", "guardian_phone": "9876543201", "guardian_email": "rajesh.sharma@example.com", "account_type": "MINOR_SAVINGS", "account_number": "BSB-MIN-00001", "data_sources": ["CBS.CUSTOMER_MASTER", "CBS.ACCOUNT_MASTER"], "consent_status": "VERIFIED", "verification_status": "VERIFIED", "verification_method": "DIGILOCKER", "data_blocked": False, "created_at": days_ago(200).isoformat()},
+        {"id": uid(), "org_id": ORG_ID, "principal_name": "Diya Patel", "principal_id": "CUST-MIN-002", "date_of_birth": "2010-07-22", "age": 15, "guardian_name": "Anita Patel", "guardian_phone": "9876543202", "guardian_email": "anita.patel@example.com", "account_type": "MINOR_SAVINGS", "account_number": "BSB-MIN-00002", "data_sources": ["CBS.CUSTOMER_MASTER", "CBS.ACCOUNT_MASTER", "S3.KYC_DOCUMENTS"], "consent_status": "PENDING", "verification_status": "PENDING", "verification_method": None, "data_blocked": True, "created_at": days_ago(180).isoformat()},
+        {"id": uid(), "org_id": ORG_ID, "principal_name": "Vivaan Reddy", "principal_id": "CUST-MIN-003", "date_of_birth": "2014-11-08", "age": 11, "guardian_name": "Suresh Reddy", "guardian_phone": "9876543203", "guardian_email": "suresh.reddy@example.com", "account_type": "MINOR_SAVINGS", "account_number": "BSB-MIN-00003", "data_sources": ["CBS.CUSTOMER_MASTER"], "consent_status": "PENDING", "verification_status": "FAILED", "verification_method": "AADHAAR_OTP", "data_blocked": True, "created_at": days_ago(150).isoformat()},
+        {"id": uid(), "org_id": ORG_ID, "principal_name": "Ananya Singh", "principal_id": "CUST-MIN-004", "date_of_birth": "2009-01-30", "age": 17, "guardian_name": "Vikram Singh", "guardian_phone": "9876543204", "guardian_email": "vikram.singh@example.com", "account_type": "MINOR_SAVINGS", "account_number": "BSB-MIN-00004", "data_sources": ["CBS.CUSTOMER_MASTER", "CBS.ACCOUNT_MASTER"], "consent_status": "VERIFIED", "verification_status": "VERIFIED", "verification_method": "DIGILOCKER", "data_blocked": False, "created_at": days_ago(300).isoformat()},
+        {"id": uid(), "org_id": ORG_ID, "principal_name": "Kabir Joshi", "principal_id": "CUST-MIN-005", "date_of_birth": "2015-06-12", "age": 10, "guardian_name": "Meera Joshi", "guardian_phone": "9876543205", "guardian_email": "meera.joshi@example.com", "account_type": "MINOR_SAVINGS", "account_number": "BSB-MIN-00005", "data_sources": ["CBS.CUSTOMER_MASTER"], "consent_status": "PENDING", "verification_status": "PENDING", "verification_method": None, "data_blocked": True, "created_at": days_ago(90).isoformat()},
+        {"id": uid(), "org_id": ORG_ID, "principal_name": "Ishaan Gupta", "principal_id": "CUST-MIN-006", "date_of_birth": "2011-09-25", "age": 14, "guardian_name": "Priya Gupta", "guardian_phone": "9876543206", "guardian_email": "priya.gupta@example.com", "account_type": "MINOR_SAVINGS", "account_number": "BSB-MIN-00006", "data_sources": ["CBS.CUSTOMER_MASTER", "S3.KYC_DOCUMENTS"], "consent_status": "EXPIRED", "verification_status": "EXPIRED", "verification_method": "DIGILOCKER", "data_blocked": True, "created_at": days_ago(400).isoformat()},
+        {"id": uid(), "org_id": ORG_ID, "principal_name": "Saanvi Nair", "principal_id": "CUST-MIN-007", "date_of_birth": "2013-04-18", "age": 12, "guardian_name": "Ramesh Nair", "guardian_phone": "9876543207", "guardian_email": "ramesh.nair@example.com", "account_type": "MINOR_FD", "account_number": "BSB-MIN-00007", "data_sources": ["CBS.CUSTOMER_MASTER", "CBS.ACCOUNT_MASTER"], "consent_status": "VERIFIED", "verification_status": "VERIFIED", "verification_method": "MANUAL", "data_blocked": False, "created_at": days_ago(250).isoformat()},
+    ]
+
+
+def get_child_verifications():
+    return [
+        {"id": uid(), "org_id": ORG_ID, "child_name": "Aarav Sharma", "guardian_name": "Rajesh Kumar Sharma", "verification_method": "DIGILOCKER", "status": "VERIFIED", "initiated_at": days_ago(190).isoformat(), "completed_at": days_ago(189).isoformat(), "guardian_age_confirmed": True, "child_age_confirmed": True},
+        {"id": uid(), "org_id": ORG_ID, "child_name": "Vivaan Reddy", "guardian_name": "Suresh Reddy", "verification_method": "AADHAAR_OTP", "status": "FAILED", "initiated_at": days_ago(145).isoformat(), "completed_at": days_ago(145).isoformat(), "failure_reason": "OTP verification timed out. Guardian did not complete verification within 10 minutes."},
+        {"id": uid(), "org_id": ORG_ID, "child_name": "Ananya Singh", "guardian_name": "Vikram Singh", "verification_method": "DIGILOCKER", "status": "VERIFIED", "initiated_at": days_ago(295).isoformat(), "completed_at": days_ago(294).isoformat(), "guardian_age_confirmed": True, "child_age_confirmed": True},
+        {"id": uid(), "org_id": ORG_ID, "child_name": "Saanvi Nair", "guardian_name": "Ramesh Nair", "verification_method": "MANUAL", "status": "VERIFIED", "initiated_at": days_ago(245).isoformat(), "completed_at": days_ago(240).isoformat(), "guardian_age_confirmed": True, "child_age_confirmed": True},
+    ]
+
+
+def get_audit_reports():
+    return [
+        {"id": uid(), "org_id": ORG_ID, "report_type": "MONTHLY", "title": "Monthly DPDPA Compliance Report - January 2025", "status": "READY", "generated_at": days_ago(35).isoformat(), "ai_summary": "Overall compliance score improved from 58 to 61. Key improvements in data discovery (+3) and breach readiness (+2). Critical actions: 3 unresolved Aadhaar encryption flags, 1 vendor with expired DPA. Consent management remains the weakest area at 55/100.", "report_data": {"period": "Jan 2025", "score": 61, "flags_resolved": 3, "flags_created": 2, "rights_completed": 8, "breaches": 0}, "created_at": days_ago(35).isoformat()},
+        {"id": uid(), "org_id": ORG_ID, "report_type": "QUARTERLY", "title": "Q4 2024 DPDPA Compliance Assessment", "status": "READY", "generated_at": days_ago(65).isoformat(), "ai_summary": "Quarterly assessment shows steady improvement trajectory. Score increased from 48 to 58. Significant progress in data discovery with 9 assets scanned and 38 columns classified. Vendor management remains critical concern with Legacy SMS Vendor operating on expired DPA for 3+ months.", "report_data": {"period": "Q4 2024", "score": 58, "flags_resolved": 7, "flags_created": 8, "rights_completed": 15, "breaches": 1}, "created_at": days_ago(65).isoformat()},
+        {"id": uid(), "org_id": ORG_ID, "report_type": "INCIDENT", "title": "Incident Report - Customer Data Exposure", "status": "READY", "generated_at": days_ago(40).isoformat(), "ai_summary": "Critical breach involving unauthorized API access exposed 12,432 customer records. Breach detected and contained within 24 hours. DPBI notified within 72-hour window. Root cause: Missing authentication on mobile banking API endpoint. Corrective measures implemented including API gateway security audit and mandatory auth middleware.", "report_data": {"incident_ref": "DPBI-2024-INC-0892", "affected": 12432, "categories": ["PERSONAL", "FINANCIAL"], "contained_in_hours": 24}, "created_at": days_ago(40).isoformat()},
+    ]
+
+
 async def seed_database(db):
     """Seed the database with initial data if not already seeded."""
     existing_org = await db.organisations.find_one({"name": "Bharatiya Sahkar Bank Ltd"})
@@ -274,6 +303,9 @@ async def seed_database(db):
     await db.vendors.insert_many(get_vendors())
     await db.compliance_scores.insert_one(get_compliance_scores())
     await db.scan_jobs.insert_many(get_scan_jobs())
+    await db.child_records.insert_many(get_child_records())
+    await db.child_verifications.insert_many(get_child_verifications())
+    await db.audit_reports.insert_many(get_audit_reports())
 
     # Create indexes
     await db.users.create_index("email", unique=True)

@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard, Database, Table2, FileCheck, Users2,
   ShieldAlert, Building2, BarChart3, FileText, Settings,
-  Shield, LogOut, AlertTriangle, Scale
+  Shield, LogOut, AlertTriangle, Scale, Baby
 } from "lucide-react";
 
 const navGroups = [
@@ -29,6 +29,7 @@ const navGroups = [
     items: [
       { to: "/breach", icon: ShieldAlert, label: "Breach Sentinel" },
       { to: "/vendors", icon: Building2, label: "Vendor Trust" },
+      { to: "/children", icon: Baby, label: "Children Shield" },
     ],
   },
   {

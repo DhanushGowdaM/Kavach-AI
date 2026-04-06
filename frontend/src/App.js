@@ -14,6 +14,8 @@ import RiskFlags from "@/pages/RiskFlags";
 import BreachSentinel from "@/pages/BreachSentinel";
 import VendorTrust from "@/pages/VendorTrust";
 import ComplianceScore from "@/pages/ComplianceScore";
+import ChildrenShield from "@/pages/ChildrenShield";
+import AuditReports from "@/pages/AuditReports";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -54,21 +56,11 @@ function AppRoutes() {
         <Route path="breach" element={<BreachSentinel />} />
         <Route path="vendors" element={<VendorTrust />} />
         <Route path="compliance" element={<ComplianceScore />} />
-        <Route path="reports" element={<PlaceholderPage title="Audit Reports" />} />
+        <Route path="children" element={<ChildrenShield />} />
+        <Route path="reports" element={<AuditReports />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
-  );
-}
-
-function PlaceholderPage({ title }) {
-  return (
-    <div className="space-y-6 animate-fade-in" data-testid={`${title.toLowerCase().replace(/\s+/g, '-')}-page`}>
-      <h1 className="text-[22px] font-semibold text-[#E6EDF3] font-['Outfit']">{title}</h1>
-      <div className="bg-[#161B22] border border-[#30363D] rounded-lg p-8 text-center">
-        <p className="text-sm text-[#8B949E]">This module is coming soon.</p>
-      </div>
-    </div>
   );
 }
 

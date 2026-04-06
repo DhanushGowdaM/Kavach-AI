@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import api from "@/lib/api";
-import { Database, Server, HardDrive, Cloud, Plus, RefreshCw, CheckCircle2, XCircle, MinusCircle } from "lucide-react";
+import { Database, Server, HardDrive, Cloud, Plus, RefreshCw, CheckCircle2, XCircle, MinusCircle, Scan, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 const SOURCE_ICONS = {
@@ -20,6 +20,8 @@ export default function DataSources() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [testing, setTesting] = useState(null);
+  const [scanning, setScanning] = useState(null);
+  const [scanJob, setScanJob] = useState(null);
   const [form, setForm] = useState({ name: "", source_type: "POSTGRESQL", host: "", port: 5432, database_name: "", username: "" });
 
   useEffect(() => {
@@ -58,6 +60,32 @@ export default function DataSources() {
       console.error(err);
     } finally {
       setTesting(null);
+    }
+  };
+
+  const handleScan = async (id) => {
+    setScanning(id);
+    try {
+      const { data } = await api.post("/scan/start", { source_id: id, job_type: "FULL" });
+      setScanJob(data);
+      // Poll for progress
+      const pollInterval = setInterval(async () => {
+        try {
+          const { data: job } = await api.get(`/scan/jobs/${data.id}`);
+          setScanJob(job);
+          if (job.status === "COMPLETED" || job.status === "FAILED") {
+            clearInterval(pollInterval);
+            setScanning(null);
+            loadSources();
+          }
+        } catch {
+          clearInterval(pollInterval);
+          setScanning(null);
+        }
+      }, 2000);
+    } catch (err) {
+      console.error(err);
+      setScanning(null);
     }
   };
 
@@ -140,6 +168,15 @@ export default function DataSources() {
                     <span className="text-xs font-mono" style={{ color: status.color }}>{src.connection_status}</span>
                   </div>
                   <button
+                    onClick={() => handleScan(src.id)}
+                    disabled={scanning === src.id}
+                    data-testid={`scan-source-${src.id}`}
+                    className="flex items-center gap-1.5 text-xs bg-[#3DDC97]/10 text-[#3DDC97] hover:bg-[#3DDC97]/20 px-3 py-1.5 rounded transition-colors disabled:opacity-50"
+                  >
+                    {scanning === src.id ? <Loader2 size={14} className="animate-spin" /> : <Scan size={14} />}
+                    {scanning === src.id ? "Scanning..." : "AI Scan"}
+                  </button>
+                  <button
                     onClick={() => handleTest(src.id)}
                     disabled={testing === src.id}
                     data-testid={`test-source-${src.id}`}
@@ -153,6 +190,39 @@ export default function DataSources() {
           );
         })}
       </div>
+
+      {/* Scan Progress Banner */}
+      {scanJob && (scanJob.status === "QUEUED" || scanJob.status === "RUNNING") && (
+        <div className="bg-[#161B22] border border-[#58A6FF]/30 rounded-lg p-4" data-testid="scan-progress-banner">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Loader2 size={16} className="text-[#58A6FF] animate-spin" />
+              <span className="text-sm text-[#E6EDF3]">AI Scan in Progress</span>
+            </div>
+            <span className="text-xs font-mono text-[#58A6FF]">{scanJob.progress_percent}%</span>
+          </div>
+          <div className="w-full h-2 bg-[#30363D] rounded-full overflow-hidden">
+            <div className="h-full bg-[#58A6FF] rounded-full transition-all duration-300" style={{ width: `${scanJob.progress_percent}%` }} />
+          </div>
+          {scanJob.current_asset && (
+            <p className="text-xs text-[#8B949E] mt-2 font-mono">Processing: {scanJob.current_asset}</p>
+          )}
+          <p className="text-xs text-[#8B949E] mt-1">
+            Assets: {scanJob.assets_scanned} | Columns: {scanJob.columns_classified} | Flags: {scanJob.risk_flags_created}
+          </p>
+        </div>
+      )}
+      {scanJob && scanJob.status === "COMPLETED" && (
+        <div className="bg-[#3DDC97]/5 border border-[#3DDC97]/30 rounded-lg p-4" data-testid="scan-complete-banner">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={16} className="text-[#3DDC97]" />
+            <span className="text-sm text-[#3DDC97]">Scan Complete</span>
+          </div>
+          <p className="text-xs text-[#8B949E] mt-1">
+            Scanned {scanJob.assets_scanned} assets, classified {scanJob.columns_classified} columns, found {scanJob.risk_flags_created} new risk flags
+          </p>
+        </div>
+      )}
     </div>
   );
 }

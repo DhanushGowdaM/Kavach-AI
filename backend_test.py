@@ -333,6 +333,228 @@ class KavachAPITester:
             self.log(f"   Module scores: {modules}", "INFO")
         return success
 
+    def test_ai_scan_start(self):
+        """Test AI scan start endpoint"""
+        # First get a source ID
+        success, sources = self.run_test("Get Sources for Scan Test", "GET", "sources", 200)
+        if not success or not sources:
+            return False
+            
+        source_id = sources[0]['id']
+        success, response = self.run_test(
+            "AI Scan Start",
+            "POST",
+            "scan/start",
+            200,
+            data={"source_id": source_id, "job_type": "FULL"}
+        )
+        if success:
+            job = response
+            self.log(f"   Scan Job ID: {job.get('id')}, Status: {job.get('status')}", "INFO")
+            # Store job ID for progress test
+            self.scan_job_id = job.get('id')
+        return success
+
+    def test_ai_scan_progress(self):
+        """Test AI scan job progress endpoint"""
+        if not hasattr(self, 'scan_job_id') or not self.scan_job_id:
+            self.log("   Skipping - no scan job ID available", "INFO")
+            return True
+            
+        success, response = self.run_test(
+            "AI Scan Progress",
+            "GET",
+            f"scan/jobs/{self.scan_job_id}",
+            200
+        )
+        if success:
+            job = response
+            self.log(f"   Status: {job.get('status')}, Progress: {job.get('progress_percent')}%", "INFO")
+        return success
+
+    def test_scan_jobs_list(self):
+        """Test scan jobs listing"""
+        success, response = self.run_test(
+            "Scan Jobs List",
+            "GET",
+            "scan/jobs",
+            200
+        )
+        if success:
+            jobs = response
+            self.log(f"   Found {len(jobs)} scan jobs", "INFO")
+            status_counts = {}
+            for job in jobs:
+                status = job.get('status', 'UNKNOWN')
+                status_counts[status] = status_counts.get(status, 0) + 1
+            self.log(f"   Status distribution: {status_counts}", "INFO")
+        return success
+
+    def test_children_dashboard(self):
+        """Test Children's Data Shield dashboard"""
+        success, response = self.run_test(
+            "Children Dashboard",
+            "GET",
+            "children/dashboard",
+            200
+        )
+        if success:
+            stats = response
+            self.log(f"   Total minors: {stats.get('total_minors')}, Verified: {stats.get('verified')}", "INFO")
+            self.log(f"   Pending: {stats.get('pending')}, Failed: {stats.get('failed')}", "INFO")
+        return success
+
+    def test_children_records(self):
+        """Test children records listing"""
+        success, response = self.run_test(
+            "Children Records",
+            "GET",
+            "children/records",
+            200
+        )
+        if success:
+            records = response
+            self.log(f"   Found {len(records)} child records", "INFO")
+            status_counts = {}
+            for record in records:
+                status = record.get('verification_status', 'UNKNOWN')
+                status_counts[status] = status_counts.get(status, 0) + 1
+            self.log(f"   Verification status: {status_counts}", "INFO")
+            # Store a record ID for verification test
+            if records:
+                self.child_record_id = records[0].get('id')
+        return success
+
+    def test_children_verify_digilocker(self):
+        """Test DigiLocker verification initiation"""
+        if not hasattr(self, 'child_record_id') or not self.child_record_id:
+            self.log("   Skipping - no child record ID available", "INFO")
+            return True
+            
+        success, response = self.run_test(
+            "DigiLocker Verification",
+            "POST",
+            "children/verify-digilocker",
+            200,
+            data={"child_record_id": self.child_record_id, "verification_method": "DIGILOCKER"}
+        )
+        if success:
+            verification = response
+            self.log(f"   Verification ID: {verification.get('verification_id')}, Status: {verification.get('status')}", "INFO")
+        return success
+
+    def test_children_verifications(self):
+        """Test children verifications listing"""
+        success, response = self.run_test(
+            "Children Verifications",
+            "GET",
+            "children/verifications",
+            200
+        )
+        if success:
+            verifications = response
+            self.log(f"   Found {len(verifications)} verifications", "INFO")
+            status_counts = {}
+            for verification in verifications:
+                status = verification.get('status', 'UNKNOWN')
+                status_counts[status] = status_counts.get(status, 0) + 1
+            self.log(f"   Status distribution: {status_counts}", "INFO")
+        return success
+
+    def test_audit_reports_list(self):
+        """Test audit reports listing"""
+        success, response = self.run_test(
+            "Audit Reports List",
+            "GET",
+            "compliance/reports",
+            200
+        )
+        if success:
+            reports = response
+            self.log(f"   Found {len(reports)} audit reports", "INFO")
+            type_counts = {}
+            for report in reports:
+                report_type = report.get('report_type', 'UNKNOWN')
+                type_counts[report_type] = type_counts.get(report_type, 0) + 1
+            self.log(f"   Report types: {type_counts}", "INFO")
+        return success
+
+    def test_audit_report_generate(self):
+        """Test audit report generation"""
+        success, response = self.run_test(
+            "Generate Audit Report",
+            "POST",
+            "compliance/reports",
+            200,
+            data={"report_type": "MONTHLY", "title": "Test Report"}
+        )
+        if success:
+            report = response
+            self.log(f"   Report ID: {report.get('id')}, Status: {report.get('status')}", "INFO")
+            # Store report ID for PDF test
+            self.report_id = report.get('id')
+        return success
+
+    def test_audit_report_detail(self):
+        """Test audit report detail endpoint"""
+        if not hasattr(self, 'report_id') or not self.report_id:
+            self.log("   Skipping - no report ID available", "INFO")
+            return True
+            
+        success, response = self.run_test(
+            "Audit Report Detail",
+            "GET",
+            f"compliance/reports/{self.report_id}",
+            200
+        )
+        if success:
+            report = response
+            self.log(f"   Title: {report.get('title')}, Type: {report.get('report_type')}", "INFO")
+        return success
+
+    def test_audit_report_pdf(self):
+        """Test audit report PDF download"""
+        if not hasattr(self, 'report_id') or not self.report_id:
+            self.log("   Skipping - no report ID available", "INFO")
+            return True
+            
+        # For PDF test, we expect a binary response, so we'll check status code only
+        url = f"{self.base_url}/api/compliance/reports/{self.report_id}/pdf"
+        headers = {'Authorization': f'Bearer {self.token}'}
+        
+        self.tests_run += 1
+        self.log(f"🔍 Testing Audit Report PDF Download - GET compliance/reports/{self.report_id}/pdf")
+        
+        try:
+            response = self.session.get(url, headers=headers)
+            success = response.status_code == 200
+            
+            if success:
+                self.tests_passed += 1
+                self.log(f"✅ PASSED - Status: {response.status_code}", "SUCCESS")
+                self.log(f"   Content-Type: {response.headers.get('Content-Type', 'N/A')}", "INFO")
+                self.log(f"   Content-Length: {len(response.content)} bytes", "INFO")
+                return True
+            else:
+                self.log(f"❌ FAILED - Expected 200, got {response.status_code}", "ERROR")
+                self.failed_tests.append({
+                    "test": "Audit Report PDF Download",
+                    "endpoint": f"compliance/reports/{self.report_id}/pdf",
+                    "expected": 200,
+                    "actual": response.status_code,
+                    "response": response.text[:200]
+                })
+                return False
+                
+        except Exception as e:
+            self.log(f"❌ FAILED - Exception: {str(e)}", "ERROR")
+            self.failed_tests.append({
+                "test": "Audit Report PDF Download",
+                "endpoint": f"compliance/reports/{self.report_id}/pdf",
+                "error": str(e)
+            })
+            return False
+
     def test_logout(self):
         """Test logout functionality"""
         success, response = self.run_test(
@@ -384,6 +606,26 @@ class KavachAPITester:
         self.test_breach_events()
         self.test_breach_anomalies()
         self.test_vendors()
+        
+        # AI Scan tests
+        self.log("\n🤖 AI SCAN TESTS", "INFO")
+        self.test_ai_scan_start()
+        self.test_ai_scan_progress()
+        self.test_scan_jobs_list()
+        
+        # Children's Data Shield tests
+        self.log("\n👶 CHILDREN'S DATA SHIELD TESTS", "INFO")
+        self.test_children_dashboard()
+        self.test_children_records()
+        self.test_children_verify_digilocker()
+        self.test_children_verifications()
+        
+        # Audit Reports tests
+        self.log("\n📋 AUDIT REPORTS TESTS", "INFO")
+        self.test_audit_reports_list()
+        self.test_audit_report_generate()
+        self.test_audit_report_detail()
+        self.test_audit_report_pdf()
         
         # Cleanup
         self.log("\n🧹 CLEANUP", "INFO")

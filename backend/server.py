@@ -12,6 +12,9 @@ import logging
 import uuid
 import bcrypt
 import jwt
+import json as json_module
+import re
+import asyncio
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -101,6 +104,18 @@ class BreachCreate(BaseModel):
 class RightsRequestUpdate(BaseModel):
     status: Optional[str] = None
     notes: Optional[str] = None
+
+class ScanStartRequest(BaseModel):
+    source_id: str
+    job_type: str = "FULL"
+
+class ReportGenerateRequest(BaseModel):
+    report_type: str = "MONTHLY"
+    title: Optional[str] = None
+
+class ChildVerifyRequest(BaseModel):
+    child_record_id: str
+    verification_method: str = "DIGILOCKER"
 
 # ─── Auth Routes ───
 @api_router.post("/auth/login")
@@ -382,6 +397,490 @@ async def get_compliance_score(user=Depends(get_current_user)):
 async def list_scan_jobs(user=Depends(get_current_user)):
     jobs = await db.scan_jobs.find({"org_id": user["org_id"]}, {"_id": 0}).sort("created_at", -1).to_list(20)
     return jobs
+
+@api_router.get("/scan/jobs/{job_id}")
+async def get_scan_job(job_id: str, user=Depends(get_current_user)):
+    job = await db.scan_jobs.find_one({"id": job_id, "org_id": user["org_id"]}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Scan job not found")
+    return job
+
+# ─── AI Scan Engine ───
+
+async def run_ai_classification(job_id: str, org_id: str, source_id: str):
+    """Background task: AI-powered column classification for a data source."""
+    try:
+        await db.scan_jobs.update_one({"id": job_id}, {"$set": {"status": "RUNNING", "started_at": datetime.now(timezone.utc).isoformat()}})
+
+        # Get assets for this source
+        assets = await db.data_assets.find({"org_id": org_id, "source_id": source_id}, {"_id": 0}).to_list(100)
+        if not assets:
+            await db.scan_jobs.update_one({"id": job_id}, {"$set": {"status": "COMPLETED", "progress_percent": 100, "completed_at": datetime.now(timezone.utc).isoformat()}})
+            return
+
+        total_assets = len(assets)
+        total_cols = 0
+        total_flags = 0
+
+        for idx, asset in enumerate(assets):
+            await db.scan_jobs.update_one({"id": job_id}, {"$set": {
+                "current_asset": asset["asset_name"],
+                "progress_percent": int((idx / total_assets) * 100),
+                "assets_scanned": idx,
+            }})
+
+            # Get existing columns for this asset
+            existing_cols = await db.column_classifications.find({"asset_id": asset["id"]}, {"_id": 0}).to_list(200)
+            if not existing_cols:
+                await asyncio.sleep(0.5)
+                continue
+
+            # Build column info for AI
+            col_info = [{"name": c["column_name"], "type": c["data_type"], "position": c.get("position", 0)} for c in existing_cols]
+
+            try:
+                from emergentintegrations.llm.chat import LlmChat, UserMessage
+                llm_key = os.environ.get("EMERGENT_LLM_KEY", "")
+                if not llm_key:
+                    raise ValueError("No LLM key")
+
+                system_msg = """You are a DPDPA 2023 data classification expert. Classify database columns into DPDPA categories.
+For each column, return a JSON array with objects containing:
+- column_name: the column name
+- dpdpa_category: one of SENSITIVE_PERSONAL, FINANCIAL, CHILDREN, PERSONAL, OPERATIONAL
+- subcategory: specific type (e.g., aadhaar, pan_card, phone_number, salary, etc.)
+- confidence_score: 0-100
+- risk_tier: CRITICAL, HIGH, MEDIUM, or LOW
+- is_pii: true/false
+- dpdpa_section_ref: relevant DPDPA section
+- reasoning: brief explanation
+
+Rules:
+- Aadhaar, PAN, religion, caste, biometric, health = SENSITIVE_PERSONAL (CRITICAL)
+- Account numbers, balances, card numbers, UPI = FINANCIAL (CRITICAL/HIGH)
+- Names, emails, phones, addresses, DOB = PERSONAL (HIGH/MEDIUM)
+- IDs, status, dates, types = OPERATIONAL (LOW)
+
+Return ONLY valid JSON array. No markdown, no explanation outside the JSON."""
+
+                session_id = f"scan-{job_id}-{asset['id'][:8]}"
+                chat = LlmChat(api_key=llm_key, session_id=session_id, system_message=system_msg)
+                chat.with_model("openai", "gpt-4o-mini")
+
+                user_prompt = f"Classify these columns from table '{asset['asset_name']}' (Indian banking context):\n{json_module.dumps(col_info, indent=2)}"
+                user_msg = UserMessage(text=user_prompt)
+                response = await chat.send_message(user_msg)
+
+                # Parse AI response
+                classifications = []
+                try:
+                    # Try to extract JSON from response
+                    json_match = re.search(r'\[.*\]', response, re.DOTALL)
+                    if json_match:
+                        classifications = json_module.loads(json_match.group())
+                except (json_module.JSONDecodeError, AttributeError):
+                    logger.warning(f"Failed to parse AI response for {asset['asset_name']}")
+
+                # Update column classifications with AI results
+                for cls in classifications:
+                    col_name = cls.get("column_name", "")
+                    if not col_name:
+                        continue
+
+                    update_data = {
+                        "dpdpa_category": cls.get("dpdpa_category", "UNCLASSIFIED"),
+                        "subcategory": cls.get("subcategory", "unknown"),
+                        "confidence_score": min(99, max(50, cls.get("confidence_score", 75))),
+                        "risk_tier": cls.get("risk_tier", "MEDIUM"),
+                        "is_pii": cls.get("is_pii", False),
+                        "dpdpa_section_ref": cls.get("dpdpa_section_ref", "Section 8"),
+                        "llm_reasoning": cls.get("reasoning", ""),
+                        "classified_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+
+                    result = await db.column_classifications.update_one(
+                        {"asset_id": asset["id"], "column_name": col_name},
+                        {"$set": update_data}
+                    )
+                    if result.modified_count > 0:
+                        total_cols += 1
+
+                # Check for risk flags from AI classifications
+                for cls in classifications:
+                    if cls.get("risk_tier") == "CRITICAL" and cls.get("dpdpa_category") == "SENSITIVE_PERSONAL":
+                        # Check if flag already exists
+                        existing_flag = await db.risk_flags.find_one({
+                            "org_id": org_id, "asset_id": asset["id"],
+                            "flag_type": {"$regex": cls.get("subcategory", "").upper()}
+                        })
+                        if not existing_flag:
+                            flag_doc = {
+                                "id": str(uuid.uuid4()),
+                                "org_id": org_id,
+                                "asset_id": asset["id"],
+                                "flag_type": f"AI_DETECTED_{cls.get('subcategory', 'UNKNOWN').upper()}",
+                                "description": f"AI scan detected {cls.get('dpdpa_category')} data ({cls.get('subcategory')}) in column {cls.get('column_name')} of {asset['asset_name']}. Confidence: {cls.get('confidence_score')}%.",
+                                "dpdpa_section": cls.get("dpdpa_section_ref", "Section 8"),
+                                "severity": "CRITICAL",
+                                "remediation_advice": f"Review and apply appropriate security controls for {cls.get('subcategory')} data as per DPDPA requirements.",
+                                "created_at": datetime.now(timezone.utc).isoformat(),
+                            }
+                            await db.risk_flags.insert_one(flag_doc)
+                            total_flags += 1
+
+            except Exception as e:
+                logger.error(f"AI classification error for {asset['asset_name']}: {e}")
+
+            await asyncio.sleep(0.3)  # Rate limiting
+
+        # Complete the job
+        await db.scan_jobs.update_one({"id": job_id}, {"$set": {
+            "status": "COMPLETED",
+            "progress_percent": 100,
+            "assets_scanned": total_assets,
+            "columns_classified": total_cols,
+            "risk_flags_created": total_flags,
+            "current_asset": None,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }})
+        logger.info(f"Scan job {job_id} completed: {total_assets} assets, {total_cols} columns, {total_flags} flags")
+
+    except Exception as e:
+        logger.error(f"Scan job {job_id} failed: {e}")
+        await db.scan_jobs.update_one({"id": job_id}, {"$set": {
+            "status": "FAILED",
+            "error_message": str(e),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }})
+
+
+@api_router.post("/scan/start")
+async def start_scan(body: ScanStartRequest, user=Depends(get_current_user)):
+    # Check source exists
+    source = await db.data_sources.find_one({"id": body.source_id, "org_id": user["org_id"]}, {"_id": 0})
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    # Check no running scan for this source
+    running = await db.scan_jobs.find_one({"org_id": user["org_id"], "source_id": body.source_id, "status": {"$in": ["QUEUED", "RUNNING"]}})
+    if running:
+        raise HTTPException(status_code=409, detail="A scan is already running for this source")
+
+    job_id = str(uuid.uuid4())
+    job_doc = {
+        "id": job_id,
+        "org_id": user["org_id"],
+        "source_id": body.source_id,
+        "source_name": source.get("name", "Unknown"),
+        "job_type": body.job_type,
+        "status": "QUEUED",
+        "progress_percent": 0,
+        "current_asset": None,
+        "assets_scanned": 0,
+        "columns_classified": 0,
+        "risk_flags_created": 0,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.scan_jobs.insert_one(job_doc)
+    job_doc.pop("_id", None)
+
+    # Start background task
+    asyncio.create_task(run_ai_classification(job_id, user["org_id"], body.source_id))
+
+    return job_doc
+
+# ─── Children's Data Shield ───
+@api_router.get("/children/dashboard")
+async def children_dashboard(user=Depends(get_current_user)):
+    org_id = user["org_id"]
+    total = await db.child_records.count_documents({"org_id": org_id})
+    verified = await db.child_records.count_documents({"org_id": org_id, "verification_status": "VERIFIED"})
+    pending = await db.child_records.count_documents({"org_id": org_id, "verification_status": "PENDING"})
+    failed = await db.child_records.count_documents({"org_id": org_id, "verification_status": "FAILED"})
+    expired = await db.child_records.count_documents({"org_id": org_id, "verification_status": "EXPIRED"})
+    blocked = await db.child_records.count_documents({"org_id": org_id, "data_blocked": True})
+    return {
+        "total_minors": total,
+        "verified": verified,
+        "pending": pending,
+        "failed": failed,
+        "expired": expired,
+        "data_blocked": blocked,
+    }
+
+@api_router.get("/children/records")
+async def list_child_records(user=Depends(get_current_user), status: Optional[str] = None):
+    query = {"org_id": user["org_id"]}
+    if status:
+        query["verification_status"] = status
+    records = await db.child_records.find(query, {"_id": 0}).to_list(100)
+    return records
+
+@api_router.post("/children/verify-digilocker")
+async def verify_digilocker(body: ChildVerifyRequest, user=Depends(get_current_user)):
+    record = await db.child_records.find_one({"id": body.child_record_id, "org_id": user["org_id"]}, {"_id": 0})
+    if not record:
+        raise HTTPException(status_code=404, detail="Child record not found")
+
+    # Create verification entry (mock DigiLocker)
+    verification_id = str(uuid.uuid4())
+    verification = {
+        "id": verification_id,
+        "org_id": user["org_id"],
+        "child_record_id": body.child_record_id,
+        "child_name": record["principal_name"],
+        "guardian_name": record.get("guardian_name", "Unknown"),
+        "verification_method": body.verification_method,
+        "status": "PENDING",
+        "initiated_at": datetime.now(timezone.utc).isoformat(),
+        "initiated_by": user["email"],
+    }
+    await db.child_verifications.insert_one(verification)
+    verification.pop("_id", None)
+
+    # Update child record
+    await db.child_records.update_one(
+        {"id": body.child_record_id},
+        {"$set": {"verification_status": "PENDING", "verification_method": body.verification_method}}
+    )
+
+    # Simulate async verification (mock DigiLocker response after 3 seconds)
+    async def mock_digilocker_verify():
+        await asyncio.sleep(3)
+        import random
+        success = random.random() > 0.15  # 85% success rate
+        if success:
+            await db.child_verifications.update_one({"id": verification_id}, {"$set": {
+                "status": "VERIFIED",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "guardian_age_confirmed": True,
+                "child_age_confirmed": True,
+                "digilocker_response": {"verified": True, "method": body.verification_method, "timestamp": datetime.now(timezone.utc).isoformat()},
+            }})
+            await db.child_records.update_one({"id": body.child_record_id}, {"$set": {
+                "verification_status": "VERIFIED",
+                "consent_status": "VERIFIED",
+                "data_blocked": False,
+            }})
+        else:
+            await db.child_verifications.update_one({"id": verification_id}, {"$set": {
+                "status": "FAILED",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "failure_reason": "Guardian verification could not be completed. Please try again.",
+            }})
+            await db.child_records.update_one({"id": body.child_record_id}, {"$set": {
+                "verification_status": "FAILED",
+            }})
+
+    asyncio.create_task(mock_digilocker_verify())
+    return {"message": "Verification initiated", "verification_id": verification_id, "status": "PENDING"}
+
+@api_router.get("/children/verifications")
+async def list_child_verifications(user=Depends(get_current_user)):
+    verifications = await db.child_verifications.find({"org_id": user["org_id"]}, {"_id": 0}).sort("initiated_at", -1).to_list(100)
+    return verifications
+
+# ─── Audit Reports & PDF Generation ───
+@api_router.get("/compliance/reports")
+async def list_reports(user=Depends(get_current_user)):
+    reports = await db.audit_reports.find({"org_id": user["org_id"]}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    return reports
+
+@api_router.get("/compliance/reports/{report_id}")
+async def get_report(report_id: str, user=Depends(get_current_user)):
+    report = await db.audit_reports.find_one({"id": report_id, "org_id": user["org_id"]}, {"_id": 0})
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+    return report
+
+@api_router.post("/compliance/reports")
+async def generate_report(body: ReportGenerateRequest, user=Depends(get_current_user)):
+    org_id = user["org_id"]
+
+    # Gather data for report
+    score = await db.compliance_scores.find_one({"org_id": org_id}, {"_id": 0})
+    flags = await db.risk_flags.find({"org_id": org_id, "resolved_at": {"$exists": False}}, {"_id": 0}).to_list(100)
+    assets_count = await db.data_assets.count_documents({"org_id": org_id})
+    breach_count = await db.breach_events.count_documents({"org_id": org_id})
+    rights = await db.rights_requests.find({"org_id": org_id}, {"_id": 0}).to_list(100)
+    vendors = await db.vendors.find({"org_id": org_id}, {"_id": 0}).to_list(100)
+
+    report_data = {
+        "score": score.get("overall_score", 0) if score else 0,
+        "module_scores": {
+            "data_discovery": score.get("data_discovery_score", 0) if score else 0,
+            "consent": score.get("consent_score", 0) if score else 0,
+            "rights": score.get("rights_score", 0) if score else 0,
+            "breach_readiness": score.get("breach_readiness_score", 0) if score else 0,
+            "vendor": score.get("vendor_score", 0) if score else 0,
+            "children": score.get("children_protection_score", 0) if score else 0,
+        },
+        "open_flags": len(flags),
+        "critical_flags": len([f for f in flags if f.get("severity") == "CRITICAL"]),
+        "assets_scanned": assets_count,
+        "breach_events": breach_count,
+        "rights_total": len(rights),
+        "rights_completed": len([r for r in rights if r.get("status") == "COMPLETED"]),
+        "vendors_total": len(vendors),
+        "vendors_high_risk": len([v for v in vendors if v.get("risk_tier") in ["HIGH", "CRITICAL"]]),
+    }
+
+    # Generate AI summary
+    ai_summary = ""
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        llm_key = os.environ.get("EMERGENT_LLM_KEY", "")
+        if llm_key:
+            sys_msg = "You are a DPDPA compliance report writer. Generate a concise executive summary for the compliance report. Be specific with numbers and actionable recommendations."
+            session_id = f"report-{str(uuid.uuid4())[:8]}"
+            chat = LlmChat(api_key=llm_key, session_id=session_id, system_message=sys_msg)
+            chat.with_model("openai", "gpt-4o-mini")
+            prompt = f"""Generate an executive summary for this DPDPA compliance report:
+- Overall Score: {report_data['score']}/100
+- Module Scores: {json_module.dumps(report_data['module_scores'])}
+- Open Risk Flags: {report_data['open_flags']} ({report_data['critical_flags']} critical)
+- Assets Scanned: {report_data['assets_scanned']}
+- Breach Events: {report_data['breach_events']}
+- Rights Requests: {report_data['rights_total']} total, {report_data['rights_completed']} completed
+- Vendors: {report_data['vendors_total']} total, {report_data['vendors_high_risk']} high risk
+Report type: {body.report_type}"""
+            user_msg = UserMessage(text=prompt)
+            ai_summary = await chat.send_message(user_msg)
+    except Exception as e:
+        logger.error(f"AI summary generation error: {e}")
+        ai_summary = f"Compliance score: {report_data['score']}/100. {report_data['open_flags']} open risk flags ({report_data['critical_flags']} critical). {report_data['assets_scanned']} assets under monitoring."
+
+    title = body.title or f"{body.report_type.title()} DPDPA Compliance Report - {datetime.now(timezone.utc).strftime('%B %Y')}"
+    report_doc = {
+        "id": str(uuid.uuid4()),
+        "org_id": org_id,
+        "report_type": body.report_type,
+        "title": title,
+        "status": "READY",
+        "ai_summary": ai_summary,
+        "report_data": report_data,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user.get("full_name", "System"),
+    }
+    await db.audit_reports.insert_one(report_doc)
+    report_doc.pop("_id", None)
+    return report_doc
+
+@api_router.get("/compliance/reports/{report_id}/pdf")
+async def download_report_pdf(report_id: str, user=Depends(get_current_user)):
+    report = await db.audit_reports.find_one({"id": report_id, "org_id": user["org_id"]}, {"_id": 0})
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    from fpdf import FPDF
+    from fastapi.responses import StreamingResponse
+    import io
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Header
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.set_text_color(88, 166, 255)  # accent blue
+    pdf.cell(0, 15, "KAVACH", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(139, 148, 158)
+    pdf.cell(0, 8, "DPDPA 2023 Compliance Platform", ln=True, align="C")
+    pdf.ln(5)
+
+    # Title
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(0, 12, report.get("title", "Compliance Report"), ln=True, align="C")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 8, f"Generated: {report.get('generated_at', '')[:10]}  |  Type: {report.get('report_type', 'N/A')}  |  Organisation: Bharatiya Sahkar Bank Ltd", ln=True, align="C")
+    pdf.ln(8)
+
+    # Line separator
+    pdf.set_draw_color(200, 200, 200)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(8)
+
+    # Compliance Score
+    data = report.get("report_data", {})
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(0, 10, f"Overall DPDPA Compliance Score: {data.get('score', 0)}/100", ln=True)
+    pdf.ln(4)
+
+    # Module Scores Table
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 8, "Module-wise Scores", ln=True)
+    pdf.set_font("Helvetica", "", 10)
+
+    modules = data.get("module_scores", {})
+    module_labels = {
+        "data_discovery": "Data Discovery",
+        "consent": "Consent Management",
+        "rights": "Rights Management",
+        "breach_readiness": "Breach Readiness",
+        "vendor": "Vendor Management",
+        "children": "Children Protection",
+    }
+    for key, label in module_labels.items():
+        score_val = modules.get(key, 0)
+        pdf.set_fill_color(240, 240, 240)
+        pdf.cell(90, 7, f"  {label}", border=1, fill=True)
+        if score_val >= 70:
+            pdf.set_text_color(0, 150, 0)
+        elif score_val >= 50:
+            pdf.set_text_color(200, 130, 0)
+        else:
+            pdf.set_text_color(200, 0, 0)
+        pdf.cell(30, 7, f"  {score_val}/100", border=1, ln=True)
+        pdf.set_text_color(0, 0, 0)
+    pdf.ln(6)
+
+    # Key Metrics
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 8, "Key Metrics", ln=True)
+    pdf.set_font("Helvetica", "", 10)
+    metrics = [
+        ("Open Risk Flags", f"{data.get('open_flags', 0)} ({data.get('critical_flags', 0)} critical)"),
+        ("Assets Under Monitoring", str(data.get("assets_scanned", 0))),
+        ("Breach Events", str(data.get("breach_events", 0))),
+        ("Rights Requests", f"{data.get('rights_completed', 0)}/{data.get('rights_total', 0)} completed"),
+        ("Vendors", f"{data.get('vendors_total', 0)} total, {data.get('vendors_high_risk', 0)} high risk"),
+    ]
+    for label, value in metrics:
+        pdf.cell(90, 7, f"  {label}", border=1)
+        pdf.cell(90, 7, f"  {value}", border=1, ln=True)
+    pdf.ln(6)
+
+    # AI Executive Summary
+    summary = report.get("ai_summary", "")
+    if summary:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 8, "Executive Summary", ln=True)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.multi_cell(0, 6, summary)
+    pdf.ln(6)
+
+    # Footer
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_text_color(150, 150, 150)
+    pdf.cell(0, 8, "This report was generated by Kavach DPDPA Compliance Platform. Confidential.", ln=True, align="C")
+
+    # Output
+    pdf_bytes = pdf.output()
+    buffer = io.BytesIO(pdf_bytes)
+    buffer.seek(0)
+
+    filename = f"kavach_report_{report_id[:8]}.pdf"
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 # ─── AI DPO Copilot ───
 @api_router.post("/compliance/dpo-copilot")
