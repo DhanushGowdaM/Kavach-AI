@@ -1,0 +1,100 @@
+{
+  "theme": "dark",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "domain": "Enterprise Security & Compliance",
+  "description": "Kavach - AI-powered DPDPA 2023 compliance platform. Highly technical, data-dense 'Command Center' aesthetic. Focuses on structural clarity, explicit grid lines, and high-contrast alert states against a deep void background.",
+  "colors": {
+    "background": "#0D1117",
+    "surface": "#161B22",
+    "surface2": "#1C2333",
+    "border": "#30363D",
+    "text": "#E6EDF3",
+    "muted": "#8B949E",
+    "accent": "#58A6FF",
+    "risk_tiers": {
+      "critical": "#FF6B6B",
+      "high": "#F79B43",
+      "medium": "#BC8CFF",
+      "low": "#3DDC97"
+    }
+  },
+  "typography": {
+    "font_family": {
+      "heading": "Outfit, sans-serif",
+      "body": "IBM Plex Sans, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "hierarchy": {
+      "h1": "text-4xl lg:text-5xl font-semibold tracking-tight text-[#E6EDF3]",
+      "h2": "text-2xl lg:text-3xl font-medium tracking-tight text-[#E6EDF3]",
+      "h3": "text-xl font-medium text-[#E6EDF3]",
+      "h4": "text-lg font-medium text-[#E6EDF3]",
+      "body": "text-sm text-[#E6EDF3] leading-relaxed",
+      "muted": "text-sm text-[#8B949E]",
+      "mono_data": "text-sm font-mono text-[#E6EDF3] tracking-wider",
+      "overline": "text-xs font-bold uppercase tracking-[0.2em] text-[#8B949E]"
+    }
+  },
+  "spacing_and_layout": {
+    "strategy": "The 'Control Room' Grid",
+    "container": "w-full min-h-screen bg-[#0D1117] flex",
+    "sidebar": "w-[240px] fixed inset-y-0 left-0 bg-[#0D1117] border-r border-[#30363D] z-50 flex flex-col",
+    "main_content": "pl-[240px] flex-1 flex flex-col min-h-screen",
+    "header": "h-16 border-b border-[#30363D] bg-[#0D1117]/80 backdrop-blur-xl sticky top-0 z-40 flex items-center px-6",
+    "grid_system": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "spacing_scale": "Use tight spacing (gap-4, gap-6) for data density, but generous internal padding for cards (p-6) to maintain readability."
+  },
+  "surface_strategies": {
+    "cards": "Grid Borders (Technical Look). bg-[#161B22] border border-[#30363D] rounded-lg shadow-none. Left accent bar heavily utilized (border-l-4) to denote risk or status.",
+    "elevated_panels": "bg-[#1C2333] border border-[#30363D] rounded-lg",
+    "modals_dialogs": "bg-[#161B22] border border-[#30363D] backdrop-blur-2xl shadow-2xl shadow-black/50"
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#58A6FF] hover:bg-[#408BE0] text-[#0D1117] font-semibold transition-colors px-4 py-2 rounded-md",
+      "secondary": "bg-transparent border border-[#30363D] text-[#E6EDF3] hover:bg-[#1C2333] hover:text-[#58A6FF] transition-all px-4 py-2 rounded-md",
+      "danger": "bg-[#FF6B6B]/10 border border-[#FF6B6B]/50 text-[#FF6B6B] hover:bg-[#FF6B6B] hover:text-[#0D1117]"
+    },
+    "badges": {
+      "critical": "bg-[#FF6B6B]/10 text-[#FF6B6B] border border-[#FF6B6B]/30 px-2 py-0.5 rounded text-xs font-mono",
+      "high": "bg-[#F79B43]/10 text-[#F79B43] border border-[#F79B43]/30 px-2 py-0.5 rounded text-xs font-mono",
+      "medium": "bg-[#BC8CFF]/10 text-[#BC8CFF] border border-[#BC8CFF]/30 px-2 py-0.5 rounded text-xs font-mono",
+      "low": "bg-[#3DDC97]/10 text-[#3DDC97] border border-[#3DDC97]/30 px-2 py-0.5 rounded text-xs font-mono"
+    },
+    "tables": {
+      "header": "border-b border-[#30363D] text-[#8B949E] text-xs uppercase tracking-wider bg-[#161B22]",
+      "row": "border-b border-[#30363D]/50 hover:bg-[#1C2333] transition-colors",
+      "cell": "py-3 px-4 text-sm text-[#E6EDF3]"
+    },
+    "charts": {
+      "library": "recharts",
+      "styling": "Use grid lines with #30363D. Tooltips must be bg-[#1C2333] border border-[#30363D] shadow-lg. Use risk_tier colors for bar/pie charts to map explicitly to data risk.",
+      "gauge": "Custom Recharts RadialBarChart or specialized SVG gauge for DPDPA Compliance Score. Center text should be large font-mono."
+    }
+  },
+  "motion_and_interactions": {
+    "hover": "Subtle border color shifts (border-[#30363D] to border-[#8B949E] or border-[#58A6FF]).",
+    "transitions": "Fast and snappy. transition-all duration-150 ease-in-out.",
+    "loading": "Use mono-spaced text 'LOADING...' or a minimalist linear progress bar rather than a generic spinner."
+  },
+  "media_and_icons": {
+    "icon_library": "lucide-react (for general UI), react-icons/si (for brand logos like AWS, MongoDB).",
+    "icon_style": "1.5px stroke width. Strict mapping of colors to context (e.g., Shield Alert icon is #FF6B6B).",
+    "image_urls": {
+      "user_avatar": {
+        "url": "https://images.unsplash.com/photo-1758534063829-a72058381e21?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2OTV8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBoZWFkc2hvdCUyMGRhcmslMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc3NTQ1MDcyMHww&ixlib=rb-4.1.0&q=85",
+        "description": "Professional user avatar for top right header profile."
+      }
+    }
+  },
+  "instructions_to_main_agent": [
+    "Install required fonts from Google Fonts: Outfit, IBM Plex Sans, JetBrains Mono.",
+    "Install icon libraries: 'yarn add lucide-react react-icons'.",
+    "Use standard Shadcn UI primitives but strictly override their default styles using the hex codes provided above. Shadcn uses CSS variables by default; map them to these exact hex colors in tailwind.config.js or globals.css.",
+    "The 240px Left Sidebar must be fixed. Do not hide it on desktop. Add 'pt-16 pl-[240px]' to main content to offset the fixed sidebar and header.",
+    "Implement the 72-Hour DPBI Countdown Clock in the Breach Sentinel using a monospace font and the 'danger' or 'critical' badge styling if time is low.",
+    "Add data-testid attributes to ALL interactive elements (e.g., data-testid='sidebar-nav-security', data-testid='connect-datasource-btn').",
+    "For the Data Sources module, use Simple Icons (react-icons/si) for databases (SiMongodb, SiPostgresql, SiAmazonaws, etc.).",
+    "Do NOT use 'Inter' for headings. Stick to the specified typography."
+  ]
+}
