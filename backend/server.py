@@ -1,7 +1,8 @@
 from dotenv import load_dotenv
 from pathlib import Path
+
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / ".env")
 
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
 from starlette.middleware.cors import CORSMiddleware
@@ -18,12 +19,13 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from seed_data import seed_database
+from backend.seed_data import seed_database
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# MongoDB connection (with graceful local fallback)
+mongo_url = os.environ.get("MONGO_URL", "mongodb://localhost:27017/kavach")
+db_name = os.environ.get("DB_NAME", "kavach")
+client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=2000)
+db = client[db_name]
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "fallback-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
@@ -915,9 +917,23 @@ Answer questions about DPDPA 2023 compliance with specific section references. B
 # ─── Include router & CORS ───
 app.include_router(api_router)
 
+def _cors_origins() -> list[str]:
+    origins: list[str] = [os.environ.get("FRONTEND_URL", "http://localhost:3000")]
+    extra = os.environ.get("CORS_ORIGINS", "")
+    if extra and extra.strip() != "*":
+        origins.extend([o.strip() for o in extra.split(",") if o.strip()])
+    # de-dupe while preserving order
+    seen = set()
+    deduped: list[str] = []
+    for o in origins:
+        if o not in seen:
+            seen.add(o)
+            deduped.append(o)
+    return deduped
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.environ.get("FRONTEND_URL", "http://localhost:3000"), os.environ.get("CORS_ORIGINS", "*")],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -925,8 +941,19 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup():
+    global client, db
     logger.info("Starting Kavach - DPDPA Compliance Platform")
     try:
+        # Ensure Mongo is reachable; if not, fall back to an in-memory mock DB
+        try:
+            await client.admin.command("ping")
+        except Exception as e:
+            logger.warning(f"MongoDB not reachable ({e}); falling back to in-memory mock database.")
+            from mongomock_motor import AsyncMongoMockClient  # type: ignore
+
+            client = AsyncMongoMockClient()
+            db = client[db_name]
+
         seeded = await seed_database(db)
         if seeded:
             logger.info("Database seeded with sample data")
@@ -937,8 +964,9 @@ async def startup():
 
     # Write test credentials
     try:
-        os.makedirs("/app/memory", exist_ok=True)
-        with open("/app/memory/test_credentials.md", "w") as f:
+        memory_dir = Path(os.environ.get("MEMORY_DIR", str(ROOT_DIR.parent / "memory")))
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        with open(memory_dir / "test_credentials.md", "w", encoding="utf-8") as f:
             f.write("# Test Credentials\n\n")
             f.write("## Admin\n- Email: admin@bharatiyabank.example.com\n- Password: Kavach@2024\n- Role: ADMIN\n\n")
             f.write("## DPO\n- Email: dpo@bharatiyabank.example.com\n- Password: Kavach@2024\n- Role: DPO\n\n")
